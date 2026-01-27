@@ -2,63 +2,13 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdbool.h>
+#include <SDL2/SDL_stdinc.h>
+#include "common.h"
+#include "keyboard.h"
+#include "soundManager.h"
 
 #define WINDOW_W 800
 #define WINDOW_H 600
-
-#define SAMPLE_RATE 44100
-#define AMPLITUDE 0.2f
-
-typedef struct {
-    SDL_AudioDeviceID device;
-    Uint32 lastBeepTime;
-    bool wasCollidingY;  // Track Y-axis collision state
-    bool wasCollidingX;  // Track X-axis collision state
-} SoundManager;
-
-void InitSoundManager(SoundManager* sm) {
-    SDL_AudioSpec want, have;
-    SDL_memset(&want, 0, sizeof(want));
-    want.freq = SAMPLE_RATE;
-    want.format = AUDIO_S16SYS;
-    want.channels = 2;
-    want.samples = 1024;
-    want.callback = NULL;
-
-    sm->device = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-    sm->lastBeepTime = 0;
-    sm->wasCollidingY = false;
-    sm->wasCollidingX = false;
-    SDL_PauseAudioDevice(sm->device, 0);
-}
-
-void PlayBeep(SoundManager* sm, int duration_ms, int beepCooldown) {
-    Uint32 currentTime = SDL_GetTicks();
-    if (currentTime - sm->lastBeepTime < beepCooldown) return;
-
-    SDL_ClearQueuedAudio(sm->device);
-
-    const int num_samples = (SAMPLE_RATE * duration_ms) / 1000;
-    Sint16 beep[num_samples];
-
-    for (int i = 0; i < num_samples; i++) {
-        float t = (float)i / SAMPLE_RATE;
-        beep[i] = (Sint16)(sinf(2.0f * M_PI * 440.0f * t) * 32767.0f);
-    }
-
-    SDL_QueueAudio(sm->device, beep, num_samples * sizeof(Sint16));
-    sm->lastBeepTime = currentTime;
-}
-
-void CLoseSoundManager(SoundManager* sm) {
-    SDL_CloseAudioDevice(sm->device);
-}
-
-typedef struct {
-    float x, y;     // Pos
-    float vx, vy;   // Velocity
-    float radius;   // Size
-} Ball;
 
 int main(int argc, char* argv[]) {
     // Init SDL
@@ -75,6 +25,9 @@ int main(int argc, char* argv[]) {
     SoundManager soundManager;
     InitSoundManager(&soundManager);
 
+    NotePlayer notePlayer;
+    InitNotePlayer(&notePlayer);
+
     // Create a window
     SDL_Window* window = SDL_CreateWindow(
         "LOL",
@@ -87,7 +40,7 @@ int main(int argc, char* argv[]) {
 
     if (!window) {
         printf("No window for you! SDL_Error: %s\n", SDL_GetError());
-        CLoseSoundManager(&soundManager);
+        CloseSoundManager(&soundManager);
         SDL_Quit();
         return 1;
     }
@@ -95,6 +48,9 @@ int main(int argc, char* argv[]) {
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 
     Ball ball = {400, 100, 0, 0, 20};
+
+    // Enable text input for Unicode characters
+    SDL_StartTextInput();
 
     // Main loop
     SDL_Event event;
@@ -112,8 +68,23 @@ int main(int argc, char* argv[]) {
 
                 ball.vx = (mouseX - ball.x) * 0.1f;
                 ball.vy = (mouseY - ball.y) * 0.1f;
+            } else if (event.type == SDL_KEYDOWN) {
+                switch (event.key.keysym.sym)
+                {
+                case SDLK_ESCAPE:
+                    running = 0;
+                    break;
+                default:
+                    break;
+                }
+            // } else if (event.type == SDL_TEXTINPUT) {
+            //     printf("Text input: %s\n", event.text.text);
+            //     // Check for specific characters like 'å', 'ö', 'ä'
             }
         }
+
+        // --- Keyboard controls ---
+        CheckKeys(&ball, &notePlayer);
 
         // --- Renderer ---
 
@@ -192,7 +163,7 @@ int main(int argc, char* argv[]) {
     // Cleanup
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
-    CLoseSoundManager(&soundManager);
+    CloseSoundManager(&soundManager);
     SDL_Quit();
     return 0;
 }
